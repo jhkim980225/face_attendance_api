@@ -1,0 +1,125 @@
+# --- Python 기본 ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- 패키징/빌드 산출물 ---
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+share/python-wheels/
+MANIFEST
+
+# --- 테스트/커버리지 ---
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+.pytest_cache/
+.hypothesis/
+.cover/
+
+# --- 정적 분석/캐시 ---
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.pyre/
+
+# --- 노트북/인터프리터 ---
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# --- 가상환경/패키지 관리자 ---
+.env
+.env.*
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.python-version
+Pipfile.lock
+poetry.lock
+.pdm.toml
+__pypackages__/
+
+# --- PyInstaller ---
+*.spec
+*.manifest
+
+# --- 프레임워크별 기본 ---
+instance/             # Flask 등 공용 패턴(있으면 무시, 없으면 영향 없음)
+.webassets-cache
+
+# --- 문서/도구 ---
+docs/_build/
+.pybuilder/
+target/
+site/
+
+# --- IDE/에디터 ---
+.idea/
+.vscode/
+*.code-workspace
+.ropeproject
+.spyderproject
+.spyproject
+
+# --- OS 별 잡파일 ---
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# --- 로그/임시 ---
+logs/
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# --- DB/스토리지 ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- 보안/키/인증서(실수 업로드 방지) ---
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.jks
+
+# --- 프로젝트 특화 (FastAPI + 정적자원) ---
+app/static/images/*
+app/static/encodings/*
+*.npy
+*.tar.gz
+*.zip
+
+# 디렉터리는 유지(.gitkeep)하고 내부만 무시
+!app/static/images/.gitkeep
+!app/static/encodings/.gitkeep
