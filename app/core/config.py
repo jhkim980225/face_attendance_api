@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     MYSQL_MAX_OVERFLOW: int = int(os.getenv("MYSQL_MAX_OVERFLOW", "10"))
     
     # Face Recognition Settings
-    TOLERANCE: float = float(os.getenv("TOLERANCE", "2.0"))
+    TOLERANCE: float = float(os.getenv("TOLERANCE", "0.6"))
     
     # Storage Paths
     IMAGE_DIR: str = os.getenv("IMAGE_DIR", "app/static/images")

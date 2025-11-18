@@ -185,40 +185,7 @@ def identify_from_image(db: Session, image: np.ndarray) -> IdentifyResult:
                 reason="no_face"
             )
         
-        bbox, face_image = face_result
-        # top, right, bottom, left = bbox
-
-        # # 얼굴 중심
-        # face_center_x = (left + right) // 2
-        # face_center_y = (top + bottom) // 2
-        
-        # # ---------- 2) 가이드 사각형 계산 ----------
-        # guide_left = center_x - half_w
-        # guide_right = center_x + half_w
-        # guide_top = center_y - half_h
-        # guide_bottom = center_y + half_h
-
-        # # ---------- 3) 얼굴 bbox 전체가 가이드 안에 있는지 ----------
-        # inside_rect = (
-        #     left >= guide_left and
-        #     right <= guide_right and
-        #     top >= guide_top and
-        #     bottom <= guide_bottom
-        # )
-
-        # app_logger.debug(
-        #     f"face bbox=({left},{top},{right},{bottom}), "
-        #     f"guide=({guide_left},{guide_top},{guide_right},{guide_bottom}), "
-        #     f"inside_rect={inside_rect}"
-        # )
-
-        # # ---------- 4) 가이드 밖이면 실패 ----------
-        # if not inside_rect:
-        #     return IdentifyResult(
-        #         success=False,
-        #         message="가이드 영역 안에서 인증해주세요",
-        #         reason="out_of_area"
-        #     )
+        bbox, face_image = face_result        
 
         # ------------------------
         # 임베딩 생성
