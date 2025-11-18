@@ -16,7 +16,7 @@ from app.utils.image_io import validate_image_size, resize_image
 
 
 class IdentifyResult:
-    """Result of face identification"""
+    """업로드 이미지로 인증"""
     def __init__(
         self,
         success: bool,
@@ -56,7 +56,7 @@ class IdentifyResult:
 
 
 class EnrollResult:
-    """Result of face enrollment"""
+    """등록"""
     def __init__(
         self,
         success: bool,
@@ -87,16 +87,10 @@ class EnrollResult:
 
 def identify_from_camera(db: Session) -> IdentifyResult:
     """
-    Identify face from camera (MODE_A)
-    
-    Args:
-        db: Database session
-        
-    Returns:
-        IdentifyResult
+    카메라에서 실시간으로 얼굴을 찍어서 인증하는 모드
     """
     try:
-        # Check if camera worker is running
+        # 카메라 캡처 스레드가 돌지 않을 때
         if not camera_worker.is_alive():
             return IdentifyResult(
                 success=False,
@@ -162,30 +156,28 @@ def identify_from_upload(db: Session, file_bytes: bytes) -> IdentifyResult:
             reason="internal_error"
         )
 
-
 def identify_from_image(db: Session, image: np.ndarray) -> IdentifyResult:
-    """
-    Identify face from image array (common logic)
-    
-    Args:
-        db: Database session
-        image: Image in BGR format
-        
-    Returns:
-        IdentifyResult
-    """
     try:
-        # 프레임 크기
+        # ------------------------
+        # 화면 크기, 가이드 계산
+        # ------------------------
         h, w = image.shape[:2]
         center_x, center_y = w // 2, h // 2
-        
-        # 타원 영역 정의 (중앙) - 크기 축소
-        ellipse_width = int(w * 0.35)  # 화면 너비의 35% (편의성 향상)
-        ellipse_height = int(h * 0.50)  # 화면 높이의 50% (편의성 향상)
-        
-        # Detect face
+
+        # GUIDE_W_RATIO = 170.0 / 640.0  # 프론트 기준 170px
+        # GUIDE_H_RATIO = 220.0 / 480.0  # 프론트 기준 220px
+
+        ellipse_width = int(w * (170.0 / 640.0))
+        ellipse_height = int(h * (220.0 / 480.0))
+
+        half_w = ellipse_width / 2.0
+        half_h = ellipse_height / 2.0        
+
+        # ------------------------
+        # 얼굴 감지
+        # ------------------------
         face_result = face_service.detect_single_face(image)
-        
+
         if face_result is None:
             return IdentifyResult(
                 success=False,
@@ -194,58 +186,87 @@ def identify_from_image(db: Session, image: np.ndarray) -> IdentifyResult:
             )
         
         bbox, face_image = face_result
-        top, right, bottom, left = bbox
+        # top, right, bottom, left = bbox
+
+        # # 얼굴 중심
+        # face_center_x = (left + right) // 2
+        # face_center_y = (top + bottom) // 2
         
-        # 얼굴 중심점 계산
-        face_center_x = (left + right) // 2
-        face_center_y = (top + bottom) // 2
-        
-        # 타원 내부 체크 (타원 방정식 사용)
-        normalized_x = (face_center_x - center_x) / (ellipse_width / 2)
-        normalized_y = (face_center_y - center_y) / (ellipse_height / 2)
-        distance_from_center = normalized_x ** 2 + normalized_y ** 2
-        is_inside = distance_from_center <= 1
-        
-        app_logger.debug(f"Face center: ({face_center_x}, {face_center_y}), " 
-                        f"Screen center: ({center_x}, {center_y}), "
-                        f"Ellipse: {ellipse_width}x{ellipse_height}, "
-                        f"Distance from center: {distance_from_center:.2f}, "
-                        f"Inside: {is_inside}")
-        
-        if not is_inside:
-            app_logger.warning(f"Face detected but outside guide area: center=({face_center_x}, {face_center_y}), distance={distance_from_center:.2f}")
-            return IdentifyResult(
-                success=False,
-                message="가이드 영역 안에서 인증해주세요",
-                reason="out_of_area"
-            )
-        
-        # Generate embedding
+        # # ---------- 2) 가이드 사각형 계산 ----------
+        # guide_left = center_x - half_w
+        # guide_right = center_x + half_w
+        # guide_top = center_y - half_h
+        # guide_bottom = center_y + half_h
+
+        # # ---------- 3) 얼굴 bbox 전체가 가이드 안에 있는지 ----------
+        # inside_rect = (
+        #     left >= guide_left and
+        #     right <= guide_right and
+        #     top >= guide_top and
+        #     bottom <= guide_bottom
+        # )
+
+        # app_logger.debug(
+        #     f"face bbox=({left},{top},{right},{bottom}), "
+        #     f"guide=({guide_left},{guide_top},{guide_right},{guide_bottom}), "
+        #     f"inside_rect={inside_rect}"
+        # )
+
+        # # ---------- 4) 가이드 밖이면 실패 ----------
+        # if not inside_rect:
+        #     return IdentifyResult(
+        #         success=False,
+        #         message="가이드 영역 안에서 인증해주세요",
+        #         reason="out_of_area"
+        #     )
+
+        # ------------------------
+        # 임베딩 생성
+        # ------------------------
         embedding = face_service.embed(face_image)
-        
+
         if embedding is None:
             return IdentifyResult(
                 success=False,
                 message="얼굴 임베딩 생성 실패",
                 reason="bad_quality"
             )
-        
-        # Compare with all registered embeddings
+
+        # ------------------------
+        # DB 사용자와 비교
+        # ------------------------
         best_match = find_best_match(db, embedding)
-        
+
         if best_match is None:
             return IdentifyResult(
                 success=False,
                 message="등록된 얼굴이 없습니다",
                 reason="unknown"
             )
-        
+
         employee_id, name, min_distance = best_match
-        
-        # Best match 무조건 통과 (TOLERANCE 체크 제거)
-        app_logger.info(f"Best match accepted: {employee_id} ({name}), distance: {min_distance:.4f}")
-        
-        # Success
+
+        # Log the best match that was found (decision still pending threshold check)
+        app_logger.info(f"Best match found: {employee_id} ({name}), distance={min_distance:.4f}")
+
+        # 거리 기준 체크
+        if min_distance > settings.TOLERANCE:
+            app_logger.warning(
+                f"Face detected but similarity too low: distance={min_distance:.4f}, "
+                f"threshold={settings.TOLERANCE}"
+            )
+            return IdentifyResult(
+                success=False,
+                message="등록된 얼굴이 아닙니다",
+                reason="unknown"
+            )
+
+        # Accepted -> log acceptance after threshold check
+        app_logger.info(
+            f"Best match accepted: {employee_id} ({name}), distance={min_distance:.4f}"
+        )
+
+        # 통과 → 성공
         return IdentifyResult(
             success=True,
             employee_id=employee_id,
@@ -253,7 +274,7 @@ def identify_from_image(db: Session, image: np.ndarray) -> IdentifyResult:
             distance=min_distance,
             message="인증 성공"
         )
-        
+
     except Exception as e:
         app_logger.error(f"Error in identify_from_image: {e}")
         return IdentifyResult(
@@ -263,16 +284,10 @@ def identify_from_image(db: Session, image: np.ndarray) -> IdentifyResult:
         )
 
 
+
 def find_best_match(db: Session, embedding: np.ndarray) -> Optional[tuple]:
     """
-    Find best matching user for given embedding
-    
-    Args:
-        db: Database session
-        embedding: Face embedding to match
-        
-    Returns:
-        Tuple of (employee_id, name, distance) if match found, None otherwise
+    db 매칭
     """
     try:
         # profile_image가 있는 모든 사용자 조회 (임베딩 경로로 사용)
@@ -288,21 +303,29 @@ def find_best_match(db: Session, embedding: np.ndarray) -> Optional[tuple]:
         best_name = None
         best_distance = float('inf')
         
-        # 각 등록된 임베딩과 비교
-        for user in users_with_embeddings:
-            app_logger.debug(f"Checking user: {user.employee_id}, path: {user.profile_image}")
-            
+        # 각 등록된 임베딩과 비교 (인덱스/총량 로그 포함)
+        total = len(users_with_embeddings)
+        for idx, user in enumerate(users_with_embeddings, start=1):
+            app_logger.debug(f"Checking user [{idx}/{total}]: {user.employee_id}, path: {user.profile_image}")
+
             # 임베딩 로드
             stored_embedding = face_service.load_embedding(user.profile_image)
-            
+
             if stored_embedding is None:
-                app_logger.warning(f"Failed to load embedding from {user.profile_image}")
+                app_logger.warning(f"Failed to load embedding from {user.profile_image} for user {user.employee_id}")
                 continue
-            
+
+            # 로그: 로드된 임베딩 형태
+            try:
+                emb_shape = getattr(stored_embedding, 'shape', None)
+                app_logger.debug(f"Loaded embedding for {user.employee_id}, shape={emb_shape}")
+            except Exception:
+                app_logger.debug(f"Loaded embedding for {user.employee_id}, type={type(stored_embedding)}")
+
             # 거리 계산
             distance = face_service.l2_distance(embedding, stored_embedding)
-            app_logger.debug(f"Distance for {user.employee_id}: {distance:.4f}")
-            
+            app_logger.debug(f"[{idx}/{total}] Distance for {user.employee_id}: {distance:.4f}, {user.name}")
+
             # 최고 매칭 업데이트
             if distance < best_distance:
                 best_distance = distance
@@ -384,124 +407,61 @@ def enroll_user_simple(
         )
 
 
-def enroll_user_with_image(
-    db: Session,
-    name: str,
-    file_bytes: bytes
-) -> EnrollResult:
-    """
-    Enroll new user with profile image and auto-generated employee_id
-    
-    Args:
-        db: Database session
-        name: User name (required)
-        file_bytes: Profile image file bytes
-        
-    Returns:
-        EnrollResult
-    """
+
+def enroll_user_with_image(db: Session, name: str, file_bytes: bytes) -> EnrollResult:
     try:
-        # Auto-generate employee_id
+        # 1) employee_id 자동 생성
         employee_id = generate_employee_id(db)
-        app_logger.info(f"Auto-generated employee_id: {employee_id}")
-        
-        # Decode and validate image
-        app_logger.info(f"Image data length: {len(file_bytes)} bytes")
+
+        # 2) 이미지 디코딩
         image = face_service.decode_image(file_bytes)
-        
         if image is None:
-            app_logger.error(f"Failed to decode image (data length: {len(file_bytes)})")
-            return EnrollResult(
-                success=False,
-                message="이미지를 디코딩할 수 없습니다",
-                reason="bad_quality"
-            )
-        
-        # Validate and resize
+            return EnrollResult(False, None, "이미지를 디코딩할 수 없습니다", "bad_quality")
+
+        # 3) 이미지 크기 validation
         if not validate_image_size(image):
-            return EnrollResult(
-                success=False,
-                message="이미지가 너무 작습니다",
-                reason="bad_quality"
-            )
-        
+            return EnrollResult(False, None, "이미지가 너무 작습니다", "bad_quality")
+
         image = resize_image(image)
-        
-        app_logger.info(f"Image successfully decoded and resized: {image.shape}")
-        
-        # Save profile image
+
+        # 4) 썸네일 저장
         profile_image_path = face_service.save_thumbnail(image, employee_id)
-        
         if profile_image_path is None:
-            return EnrollResult(
-                success=False,
-                message="프로필 이미지 저장 실패",
-                reason="internal_error"
-            )
-        
-        # Detect face and generate embedding
-        app_logger.info(f"Attempting to detect face for {employee_id}")
+            return EnrollResult(False, None, "프로필 이미지 저장 실패", "internal_error")
+
+        # 5) 얼굴 감지
         face_result = face_service.detect_single_face(image)
-        
-        embedding_saved = False
-        embedding_path = None
-        
-        if face_result is not None:
-            # Face detected - generate and save embedding
-            bbox, face_image = face_result
-            app_logger.info(f"Face detected for {employee_id} at bbox: {bbox}")
-            
-            embedding = face_service.embed(face_image)
-            
-            if embedding is not None:
-                app_logger.info(f"Embedding generated for {employee_id}, shape: {embedding.shape}")
-                
-                # Save embedding
-                embedding_path = face_service.save_embedding(employee_id, embedding)
-                
-                if embedding_path:
-                    embedding_saved = True
-                    app_logger.info(f"Face embedding saved for {employee_id} at {embedding_path}")
-                else:
-                    app_logger.error(f"Failed to save embedding file for {employee_id}")
-            else:
-                app_logger.warning(f"Failed to generate embedding for {employee_id}")
-        else:
-            app_logger.warning(f"No face detected in image for {employee_id}")
-        
-        # Create user with profile image (임베딩 경로 저장)
+        if face_result is None:
+            return EnrollResult(False, None, "얼굴을 감지할 수 없습니다. 정면 사진을 사용해주세요.", "no_face")
+
+        bbox, face_image = face_result
+
+        # 6) 임베딩 생성
+        embedding = face_service.embed(face_image)
+        if embedding is None:
+            return EnrollResult(False, None, "얼굴 임베딩 생성 실패", "bad_quality")
+
+        # 7) 임베딩 저장
+        embedding_path = face_service.save_embedding(employee_id, embedding)
+        if embedding_path is None:
+            return EnrollResult(False, None, "임베딩 저장 실패", "internal_error")
+
+        # 8) DB에 user 생성
         user = User(
             employee_id=employee_id,
             name=name,
-            profile_image=embedding_path  # .npy 파일 경로 (없으면 None)
+            profile_image=embedding_path
         )
         db.add(user)
         db.commit()
-        
-        app_logger.info(f"Successfully enrolled user with image: {employee_id} ({name}), embedding_saved: {embedding_saved}")
-        
-        # Return with warning if no face detected
-        if not embedding_saved:
-            return EnrollResult(
-                success=True,
-                employee_id=employee_id,
-                message="등록 완료 (얼굴 인식 실패 - 사진만 저장됨)"
-            )
-        
-        return EnrollResult(
-            success=True,
-            employee_id=employee_id,
-            message="등록 완료"
-        )
-        
+
+        # 9) 성공 반환
+        return EnrollResult(True, employee_id, "등록 완료")
+
     except Exception as e:
         db.rollback()
-        app_logger.error(f"Error in enroll_user_with_image: {e}")
-        return EnrollResult(
-            success=False,
-            message="등록 중 오류가 발생했습니다",
-            reason="internal_error"
-        )
+        return EnrollResult(False, None, "등록 중 오류가 발생했습니다", "internal_error")
+
 
 
 def enroll_user(

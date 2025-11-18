@@ -16,30 +16,29 @@ os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 cv2.setLogLevel(0)
 
 
+
 class CameraWorker:
     """
     서버 측 카메라를 백그라운드 스레드로 계속 캡처하고, 최신 프레임을 MJPEG 스트리밍에 제공
+    OpenCV 카메라 -> frame read -> latest_frame
     """
     
     def __init__(self, device_index: int = None, fps: int = None):        
-        self.device_index = device_index or settings.CAMERA_DEVICE_INDEX
-        self.target_fps = fps or settings.STREAM_FPS
-        self.frame_interval = 1.0 / self.target_fps
+        self.device_index = device_index or settings.CAMERA_DEVICE_INDEX # 사용할 카메라 장치 번호
+        self.target_fps = fps or settings.STREAM_FPS # 목표 fps
+        self.frame_interval = 1.0 / self.target_fps # 프레임 간격 (1/FPS)
         
-        self.cap: Optional[cv2.VideoCapture] = None
-        self.latest_frame: Optional[np.ndarray] = None
+        self.cap: Optional[cv2.VideoCapture] = None # OpenCV VideoCapture 객체
+        self.latest_frame: Optional[np.ndarray] = None # 최신 프레임 (numpy array)
         self.latest_frame_time: float = 0  # 프레임 캡처 시간
-        self.thread: Optional[threading.Thread] = None
-        self.running = False
-        self.lock = threading.Lock()
-        self.last_error: Optional[str] = None
+        self.thread: Optional[threading.Thread] = None # 캡처 스레드
+        self.running = False # 스레드 동작 여부
+        self.lock = threading.Lock() # 프레임 lock
+        self.last_error: Optional[str] = None # 에러 메세지
         
     def start(self) -> bool:
         """
-        Start camera capture thread
-        
-        Returns:
-            True if started successfully, False otherwise
+        카메라 on / 백그라운드 캡처
         """
         if self.running:
             app_logger.warning("Camera worker already running")
@@ -95,15 +94,12 @@ class CameraWorker:
         app_logger.info("Camera worker stopped")
     
     def is_alive(self) -> bool:
-        """Check if camera worker is running"""
+        """카메라 캡처 스레드 정상 동작 확인"""
         return self.running and self.thread and self.thread.is_alive()
     
     def get_latest_frame(self) -> Optional[np.ndarray]:
         """
-        Get the most recent captured frame
-        
-        Returns:
-            Latest frame (BGR) or None if not available
+        캡처된 프레임 반환
         """
         with self.lock:
             if self.latest_frame is not None:
@@ -125,8 +121,7 @@ class CameraWorker:
                 ret, frame = self.cap.read()
                 
                 if not ret or frame is None:
-                    self.last_error = "Failed to capture frame"
-                    # 로그 출력 제거 (너무 자주 발생)
+                    self.last_error = "Failed to capture frame"                    
                     # 프레임 캡처 실패 시 latest_frame 무효화
                     with self.lock:
                         self.latest_frame = None

@@ -10,12 +10,21 @@ from app.core.logging import app_logger
 from app.utils.image_io import save_image, create_thumbnail
 from app.utils.paths import get_encoding_path, get_thumbnail_path, get_relative_path
 
+"""
+얼굴 인식에 필요한 모든 핵심 기능
+얼굴 이미지 디코딩
+얼굴 감지 (DeepFace → SSD → fallback Haar)
+임베딩 생성 (DeepFace Facenet → fallback HOG)
+L2 거리 기반 사용자 매칭
+임베딩 저장/로딩
+썸네일 저장
+"""
+
 try:
+    # 서버 시작 시 Facenet 모델 미리 로드 (첫 인식 속도 개선)
     from deepface import DeepFace
     DEEPFACE_AVAILABLE = True
-    app_logger.info("DeepFace library loaded successfully")
-    
-    # 서버 시작 시 Facenet 모델 미리 로드 (첫 인식 속도 개선)
+    app_logger.info("DeepFace library loaded successfully")        
     try:
         app_logger.info("Pre-loading Facenet model...")
         DeepFace.build_model("Facenet")
@@ -30,7 +39,7 @@ except ImportError:
 
 def decode_image(file_bytes: bytes) -> Optional[np.ndarray]:
     """
-    byte -> OpenCV 이미지 전환
+    byte -> OpenCV BGR 이미지 전환
     """
     from app.utils.image_io import decode_image as decode_img
     return decode_img(file_bytes)

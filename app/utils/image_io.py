@@ -30,9 +30,10 @@ def decode_image(file_bytes: bytes) -> Optional[np.ndarray]:
     
     """
     try:
-        # Convert bytes to numpy array
+        # byte -> numpy array
         nparr = np.frombuffer(file_bytes, np.uint8)
-        # Decode image
+
+        # numpy -> bgr 복원
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if img is None:
